@@ -17,12 +17,16 @@ namespace JustTheBasics
         // Var to hold time since last frame
         float dTime = 0.0f;
 
+        // These pertain to what the user can see at a given time
+        public RectangleF CurrentView = new RectangleF(0, 0, 800, 600);
+        private Matrix4 ortho;
+
         // Dictionary of named shader programs from our custom class
         Dictionary<string, ShaderProgram> shaders = new Dictionary<string, ShaderProgram>();
         string activeShader = "default";
 
         // Camera we're viewing out of
-        Camera cam = new Camera();
+        //Camera cam = new Camera();
 
         // Index buffer object elements
         int ibo_elements;
@@ -34,15 +38,16 @@ namespace JustTheBasics
         Vector2[] texcoorddata;
 
         // List of all the sprites we will be rendering
-        List<Sprite> objects = new List<Sprite>();
+        List<GameObject> objects = new List<GameObject>();
 
         // Dictionary to store texture ID's by name
         Dictionary<string, int> textures = new Dictionary<string, int>();
 
         // Default constructor that sets window size to 512x512 and adds some antialiasing (the GraphicsMode part)
-        public Game() : base(512, 512, new OpenTK.Graphics.GraphicsMode(32, 24, 0, 4))
+        public Game() : base(800, 600, new OpenTK.Graphics.GraphicsMode(32, 24, 0, 4))
         {
-
+            CurrentView.Size = new SizeF(ClientSize.Width, ClientSize.Height);
+            ortho = Matrix4.CreateOrthographic(ClientSize.Width, ClientSize.Height, -1.0f, 64f);
         }
 
         // Use this function to load images, objects, and shaders at the start
@@ -67,8 +72,32 @@ namespace JustTheBasics
             textures.Add("LifeIcon.png", loadImage("LifeIcon.png", tc));
             tc.TextureID = textures["LifeIcon.png"];
 
+            // Create a new GameObject
+            Vector2[] spawn = new Vector2[] { new Vector2(16, 16), new Vector2(16, 32), new Vector2(32, 32), new Vector2(32, 16), new Vector2(16, 16) };
+            
+            float[] map = new float[] { 0f, 0f, Width, Height };
+            GameObject objPlayer = new GameObject("Player", spawn, map, 2.0f, 0.0f, true, tc);
+
             // Add the sprite to our list of active Sprites
-            objects.Add(tc);
+            objects.Add(objPlayer);
+
+            //--------------- Create bricks ------------------------------
+            // Create a new sprite here
+            // In final compiled game, should actually make gameObjects here and create the sprites
+            // inside those.  For now, Sprite and GameObject will be synonymous.
+            Sprite bc = new Sprite();
+
+            // Load one of our images (also try Black_Hole.png), bind it to tc
+            textures.Add("Bricks.png", loadImage("Bricks.png", bc));
+            bc.TextureID = textures["Bricks.png"];
+
+            // Create a new GameObject
+            Vector2[] spawnBrick = new Vector2[] { new Vector2(128, 128), new Vector2(128, 160), new Vector2(160, 160), new Vector2(160, 128), new Vector2(128, 128) };
+
+            GameObject objBricks = new GameObject("Bricks", spawnBrick, map, 0.0f, 0.0f, true, bc);
+
+            // Add the sprite to our list of active Sprites
+            objects.Add(objBricks);
         }
 
         // This function overrides the base OnLoad function
@@ -76,6 +105,8 @@ namespace JustTheBasics
         protected override void OnLoad(EventArgs e)
         {
             base.OnLoad(e);
+
+            GL.Viewport(0, 0, Width, Height);
 
             // Call our initialization function
             initProgram();
@@ -108,8 +139,10 @@ namespace JustTheBasics
             int vertcount = 0;
 
             // Loop over every sprite in the game (later should be GameObject)
-            foreach (Sprite v in objects)
+            foreach (GameObject go in objects)
             {
+                Sprite v = go.sprite;
+                /*
                 //get state of all keyboards on device
                 var state = OpenTK.Input.Keyboard.GetState();
                 //checks up key, if it is pressed it will update location.
@@ -117,28 +150,26 @@ namespace JustTheBasics
                 {
                     // Set the sprite's position
                     v.Position.Y += 5f / Height;
-                    // Update the matrix used to calculate the Sprite's visuals
-                    v.CalculateModelMatrix();
-                    v.ModelViewProjectionMatrix = v.ModelMatrix;
                 }
                 if (state[Key.Down])
                 {
                     v.Position.Y -= 5f / Height;
-                    v.CalculateModelMatrix();
-                    v.ModelViewProjectionMatrix = v.ModelMatrix;
                 }
                 if (state[Key.Right])
                 {
-                    v.Position.X += 5f / Height;
-                    v.CalculateModelMatrix();
-                    v.ModelViewProjectionMatrix = v.ModelMatrix;
+                    v.Position.X += 5f / Width;
                 }
                 if (state[Key.Left])
                 {
-                    v.Position.X -= 5f / Height;
-                    v.CalculateModelMatrix();
-                    v.ModelViewProjectionMatrix = v.ModelMatrix;
+                    v.Position.X -= 5f / Width;
                 }
+                */
+                go.Update();
+                float saveX = v.Position.X;
+                float saveY = v.Position.Y;
+
+                v.Position.X = v.Position.X / Width;
+                v.Position.Y = v.Position.Y / Height;
 
                 // Populate the previously defined lists
                 verts.AddRange(v.GetVerts(Width, Height).ToList());
@@ -146,6 +177,12 @@ namespace JustTheBasics
                 colors.AddRange(v.GetColorData().ToList());
                 vertcount += v.VertCount;
                 texcoords.AddRange(v.GetTextureCoords());
+
+                // Update the matrix used to calculate the Sprite's visuals
+                v.CalculateModelMatrix();
+                // Offset it by our viewport matrix (for things like scrolling levels)
+                v.ModelViewProjectionMatrix = v.ModelMatrix;// * ortho;
+                
             }
 
             // Convert the lists into easier to use arrays
@@ -210,8 +247,10 @@ namespace JustTheBasics
             int indiceat = 0;
 
             // Again, this should be GameObjects later.
-            foreach (Sprite v in objects)
+            foreach (GameObject go in objects)
             {
+                Sprite v = go.sprite;
+
                 // Tell OpenTK to associate the given texture to the VBO we're drawing
                 GL.BindTexture(TextureTarget.Texture2D, v.TextureID);
                 // Send our projection matrix to the GLSL shader
@@ -243,13 +282,17 @@ namespace JustTheBasics
 
             base.OnResize(e);
 
-            GL.Viewport(ClientRectangle.X, ClientRectangle.Y, ClientRectangle.Width, ClientRectangle.Height);
+            ortho = Matrix4.CreateOrthographic(ClientSize.Width, ClientSize.Height, 1.0f, 64f);
+            CurrentView.Size = new SizeF(ClientSize.Width, ClientSize.Height);
+            
+            //GL.Viewport(ClientRectangle.X, ClientRectangle.Y, ClientRectangle.Width, ClientRectangle.Height);
+            
+            //Matrix4 projection = Matrix4.CreateOrthographic(Width, Height, 1.0f, 64f);
 
-            Matrix4 projection = Matrix4.CreateOrthographic(Width, Height, 1.0f, 64f);
+            //GL.MatrixMode(MatrixMode.Projection);
 
-            GL.MatrixMode(MatrixMode.Projection);
-
-            GL.LoadMatrix(ref projection);
+            //GL.LoadMatrix(ref ortho);
+            
         }
 
         // Function to generate a texture ID for later reference, associated with each bitmap we load
@@ -267,6 +310,8 @@ namespace JustTheBasics
 
             image.UnlockBits(data);
 
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.LinearMipmapLinear);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
             GL.GenerateMipmap(GenerateMipmapTarget.Texture2D);
 
             return texID;
@@ -308,11 +353,13 @@ namespace JustTheBasics
     // Small class that basically is a Main() function and just runs the game.
     class Program
     {
+        public static Game MainWindow = null;
+
         static void Main(string[] args)
         {
             using (Game game = new Game())
             {
-
+                MainWindow = game;
                 game.Run();
 
             }
