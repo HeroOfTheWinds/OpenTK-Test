@@ -9,6 +9,7 @@ using System.Drawing;
 using System.IO;
 using System.Drawing.Imaging;
 using OpenTK.Input;
+using System.Collections;
 
 namespace JustTheBasics
 {
@@ -38,7 +39,10 @@ namespace JustTheBasics
         Vector2[] texcoorddata;
 
         // List of all the sprites we will be rendering
-        List<GameObject> objects = new List<GameObject>();
+        //List<GameObject> objects = new List<GameObject>();
+
+        // Dictionary of Lists of GameObjects to specify relative draw order (i.e. depth)
+        Dictionary<int, List<GameObject>> objects = new Dictionary<int, List<GameObject>>();
 
         // Dictionary to store texture ID's by name
         Dictionary<string, int> textures = new Dictionary<string, int>();
@@ -63,6 +67,11 @@ namespace JustTheBasics
             // Declare that the shader we will use first is the textured sprite
             activeShader = "textured";
 
+            // Initialize the lists of objects in the dictionary
+            objects.Add(1, new List<GameObject>());
+            objects.Add(2, new List<GameObject>());
+            objects.Add(64, new List<GameObject>());
+
             // Create a new sprite here
             // In final compiled game, should actually make gameObjects here and create the sprites
             // inside those.  For now, Sprite and GameObject will be synonymous.
@@ -76,10 +85,10 @@ namespace JustTheBasics
             Vector2[] spawn = new Vector2[] { new Vector2(16, 16), new Vector2(16, 32), new Vector2(32, 32), new Vector2(32, 16), new Vector2(16, 16) };
             
             float[] map = new float[] { 0f, 0f, Width, Height };
-            GameObject objPlayer = new GameObject("Player", spawn, map, 2.0f, 0.0f, true, tc);
+            GameObject objPlayer = new GameObject("Player", spawn, map, 5.0f, 0.0f, true, tc);
 
             // Add the sprite to our list of active Sprites
-            objects.Add(objPlayer);
+            objects[1].Add(objPlayer);
 
             //--------------- Create bricks ------------------------------
             // Create a new sprite here
@@ -97,7 +106,16 @@ namespace JustTheBasics
             GameObject objBricks = new GameObject("Bricks", spawnBrick, map, 0.0f, 0.0f, true, bc);
 
             // Add the sprite to our list of active Sprites
-            objects.Add(objBricks);
+            objects[2].Add(objBricks);
+
+            // Create a background
+            Sprite bg = new Sprite();
+            textures.Add("circuit.png", loadImage("CircuitBOTTOM.png", bg));
+            bg.TextureID = textures["circuit.png"];
+
+            Vector2[] spawnBG = new Vector2[] { new Vector2(80, 0), new Vector2(80, 640), new Vector2(720, 640), new Vector2(720, 0), new Vector2(80, 0) };
+            GameObject BG = new GameObject("BG", spawnBG, map, 0.0f, 0.0f, false, bg);
+            objects[64].Add(BG);
         }
 
         // This function overrides the base OnLoad function
@@ -113,7 +131,7 @@ namespace JustTheBasics
 
             Title = "Hello OpenTK!";
 
-            GL.ClearColor(Color.CornflowerBlue); // Yech, but at least it makes it easy to see mistakes.
+            GL.ClearColor(Color.Black); // Yech, but at least it makes it easy to see mistakes.
             GL.PointSize(5f);
         }
 
@@ -138,51 +156,66 @@ namespace JustTheBasics
             // Total number of processed vertices
             int vertcount = 0;
 
-            // Loop over every sprite in the game (later should be GameObject)
-            foreach (GameObject go in objects)
+            // Stack for LIFO behavior in drawing sprites
+            Stack<GameObject> objLists = new Stack<GameObject>();
+
+            // Loop over every GameObject in the game
+            // First put the highest-draw layer objects at the bottom so they draw last
+            foreach (int i in objects.Keys)
             {
-                Sprite v = go.sprite;
-                /*
-                //get state of all keyboards on device
-                var state = OpenTK.Input.Keyboard.GetState();
-                //checks up key, if it is pressed it will update location.
-                if (state[Key.Up])
+                foreach (GameObject o in objects[i])
                 {
-                    // Set the sprite's position
-                    v.Position.Y += 5f / Height;
+                    objLists.Push(o);
                 }
-                if (state[Key.Down])
+            }
+            // Loop over each list in the stack and draw them
+            while (objLists.Count > 0)
+            {
+                GameObject go = objLists.Pop();
                 {
-                    v.Position.Y -= 5f / Height;
-                }
-                if (state[Key.Right])
-                {
-                    v.Position.X += 5f / Width;
-                }
-                if (state[Key.Left])
-                {
-                    v.Position.X -= 5f / Width;
-                }
-                */
-                go.Update();
-                float saveX = v.Position.X;
-                float saveY = v.Position.Y;
+                    Sprite v = go.sprite;
+                    /*
+                    //get state of all keyboards on device
+                    var state = OpenTK.Input.Keyboard.GetState();
+                    //checks up key, if it is pressed it will update location.
+                    if (state[Key.Up])
+                    {
+                        // Set the sprite's position
+                        v.Position.Y += 5f / Height;
+                    }
+                    if (state[Key.Down])
+                    {
+                        v.Position.Y -= 5f / Height;
+                    }
+                    if (state[Key.Right])
+                    {
+                        v.Position.X += 5f / Width;
+                    }
+                    if (state[Key.Left])
+                    {
+                        v.Position.X -= 5f / Width;
+                    }
+                    */
+                    go.Update();
+                    float saveX = v.Position.X;
+                    float saveY = v.Position.Y;
 
-                v.Position.X = v.Position.X / Width;
-                v.Position.Y = v.Position.Y / Height;
+                    v.Position.X = v.Position.X / Width;
+                    v.Position.Y = v.Position.Y / Height;
 
-                // Populate the previously defined lists
-                verts.AddRange(v.GetVerts(Width, Height).ToList());
-                inds.AddRange(v.GetIndices(vertcount).ToList());
-                colors.AddRange(v.GetColorData().ToList());
-                vertcount += v.VertCount;
-                texcoords.AddRange(v.GetTextureCoords());
+                    // Populate the previously defined lists
+                    verts.AddRange(v.GetVerts(Width, Height).ToList());
+                    inds.AddRange(v.GetIndices(vertcount).ToList());
+                    colors.AddRange(v.GetColorData().ToList());
+                    vertcount += v.VertCount;
+                    texcoords.AddRange(v.GetTextureCoords());
 
-                // Update the matrix used to calculate the Sprite's visuals
-                v.CalculateModelMatrix();
-                // Offset it by our viewport matrix (for things like scrolling levels)
-                v.ModelViewProjectionMatrix = v.ModelMatrix;// * ortho;
-                
+                    // Update the matrix used to calculate the Sprite's visuals
+                    v.CalculateModelMatrix();
+                    // Offset it by our viewport matrix (for things like scrolling levels)
+                    v.ModelViewProjectionMatrix = v.ModelMatrix;// * ortho;
+
+                }
             }
 
             // Convert the lists into easier to use arrays
@@ -233,7 +266,7 @@ namespace JustTheBasics
             // Clear the graphics drawn last frame to avoid weird effects.
             GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
             // Enable several important switches to be able to draw flat images and make a generally pretty picture.
-            GL.Enable(EnableCap.DepthTest);
+            //GL.Enable(EnableCap.DepthTest);
             GL.Enable(EnableCap.CullFace);
             GL.Enable(EnableCap.Blend);
             GL.Enable(EnableCap.Texture2D);
@@ -246,31 +279,48 @@ namespace JustTheBasics
             // Index counter, since we turned some lists into arrays and need to offset accordingly
             int indiceat = 0;
 
-            // Again, this should be GameObjects later.
-            foreach (GameObject go in objects)
+            // Loop over every GameObject in the game
+            // First put the highest-draw layer objects at the bottom so they draw last
+            // Stack for LIFO behavior in drawing sprites
+            Stack<GameObject> objLists = new Stack<GameObject>();
+
+            // Loop over every GameObject in the game
+            // First put the highest-draw layer objects at the bottom so they draw last
+            foreach (int i in objects.Keys)
             {
-                Sprite v = go.sprite;
-
-                // Tell OpenTK to associate the given texture to the VBO we're drawing
-                GL.BindTexture(TextureTarget.Texture2D, v.TextureID);
-                // Send our projection matrix to the GLSL shader
-                GL.UniformMatrix4(shaders[activeShader].GetUniform("modelview"), false, ref v.ModelViewProjectionMatrix);
-
-                // If shader uses textures, send the image to the shader code for processing
-                if (shaders[activeShader].GetAttribute("maintexture") != -1)
+                foreach (GameObject o in objects[i])
                 {
-                    GL.Uniform1(shaders[activeShader].GetAttribute("maintexture"), v.TextureID);
+                    objLists.Push(o);
                 }
+            }
+            // Loop over each list in the stack and draw them
+            while (objLists.Count > 0)
+            {
+                GameObject go = objLists.Pop();
+                {
+                    Sprite v = go.sprite;
 
-                // Draw a square/rectangle
-                GL.DrawElements(BeginMode.Quads, v.IndiceCount, DrawElementsType.UnsignedInt, indiceat * sizeof(uint));
-                // Increment our index counter by the number of indices processed
-                indiceat += v.IndiceCount;
+                    // Tell OpenTK to associate the given texture to the VBO we're drawing
+                    GL.BindTexture(TextureTarget.Texture2D, v.TextureID);
+                    // Send our projection matrix to the GLSL shader
+                    GL.UniformMatrix4(shaders[activeShader].GetUniform("modelview"), false, ref v.ModelViewProjectionMatrix);
+
+                    // If shader uses textures, send the image to the shader code for processing
+                    if (shaders[activeShader].GetAttribute("maintexture") != -1)
+                    {
+                        GL.Uniform1(shaders[activeShader].GetAttribute("maintexture"), v.TextureID);
+                    }
+
+                    // Draw a square/rectangle
+                    GL.DrawElements(BeginMode.Quads, v.IndiceCount, DrawElementsType.UnsignedInt, indiceat * sizeof(uint));
+                    // Increment our index counter by the number of indices processed
+                    indiceat += v.IndiceCount;
+                }
             }
 
             // Free up the memory off the GPU
             shaders[activeShader].DisableVertexAttribArrays();
-
+            
             // Draw the final buffer (or canvas) to screen
             GL.Flush();
             SwapBuffers();

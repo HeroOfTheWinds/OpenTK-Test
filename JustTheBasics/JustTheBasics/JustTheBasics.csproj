@@ -76,6 +76,9 @@
     <Content Include="Bricks.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <Content Include="CircuitBOTTOM.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <Content Include="LifeIcon.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
